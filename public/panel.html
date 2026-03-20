@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Guard — Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, sans-serif; background: #111b21; color: #e9edef; height: 100vh; display: flex; flex-direction: column; }
+        
+        .header { background: #202c33; padding: 15px 20px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #2a3942; }
+        .header h1 { font-size: 18px; color: #00a884; }
+        .stats { margin-left: auto; font-size: 12px; color: #8696a0; }
+        
+        .main { display: flex; flex: 1; overflow: hidden; }
+        
+        .sidebar { width: 350px; background: #111b21; border-right: 1px solid #2a3942; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 15px; background: #202c33; font-size: 13px; color: #8696a0; }
+        .conversations { flex: 1; overflow-y: auto; }
+        .conv-item { padding: 15px; border-bottom: 1px solid #2a3942; cursor: pointer; display: flex; gap: 12px; align-items: center; }
+        .conv-item:hover { background: #202c33; }
+        .conv-item.active { background: #2a3942; }
+        .avatar { width: 45px; height: 45px; border-radius: 50%; background: #00a884; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .conv-info { flex: 1; overflow: hidden; }
+        .conv-name { font-size: 15px; font-weight: 500; margin-bottom: 3px; }
+        .conv-last { font-size: 13px; color: #8696a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .conv-time { font-size: 11px; color: #8696a0; }
+        
+        .chat { flex: 1; display: flex; flex-direction: column; }
+        .chat-header { padding: 15px 20px; background: #202c33; border-bottom: 1px solid #2a3942; display: flex; align-items: center; gap: 12px; }
+        .chat-name { font-size: 16px; font-weight: 500; }
+        .chat-phone { font-size: 13px; color: #8696a0; }
+        .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+        .msg { max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; }
+        .msg.incoming { background: #202c33; align-self: flex-start; border-radius: 0 8px 8px 8px; }
+        .msg.outgoing { background: #005c4b; align-self: flex-end; border-radius: 8px 0 8px 8px; }
+        .msg-time { font-size: 11px; color: #8696a0; margin-top: 4px; text-align: right; }
+        
+        .input-area { padding: 15px; background: #202c33; display: flex; gap: 10px; align-items: center; }
+        .input-area input { flex: 1; background: #2a3942; border: none; border-radius: 8px; padding: 12px 15px; color: #e9edef; font-size: 15px; outline: none; }
+        .input-area input::placeholder { color: #8696a0; }
+        .send-btn { background: #00a884; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .send-btn:hover { background: #00c39a; }
+        
+        .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #8696a0; gap: 15px; }
+        .empty-state .icon { font-size: 60px; }
+        
+        .no-convs { padding: 30px; text-align: center; color: #8696a0; font-size: 14px; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2a3942; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <span style="font-size: 24px;">🛡️</span>
+    <h1>WhatsApp Guard</h1>
+    <div class="stats" id="stats">Cargando...</div>
+</div>
+
+<div class="main">
+    <div class="sidebar">
+        <div class="sidebar-header">💬 Conversaciones permitidas</div>
+        <div class="conversations" id="conversations">
+            <div class="no-convs">No hay conversaciones aún</div>
+        </div>
+    </div>
+
+    <div class="chat" id="chat">
+        <div class="empty-state">
+            <div class="icon">💬</div>
+            <div>Selecciona una conversación</div>
+            <div style="font-size: 12px;">Solo ves mensajes de tus contactos permitidos</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentPhone = null;
+    let pollInterval = null;
+
+    async function loadStats() {
+        try {
+            const res = await fetch('/stats');
+            const data = await res.json();
+            document.getElementById('stats').textContent = 
+                `🟢 Activo | ✅ ${data.allowed} permitidos | 🚫 ${data.blocked} bloqueados`;
+        } catch(e) {}
+    }
+
+    async function loadConversations() {
+        try {
+            const res = await fetch('/api/conversations');
+            const convs = await res.json();
+            const container = document.getElementById('conversations');
+            
+            if (convs.length === 0) {
+                container.innerHTML = '<div class="no-convs">No hay conversaciones aún.<br>Cuando alguien de tu whitelist te escriba, aparecerá aquí.</div>';
+                return;
+            }
+
+            container.innerHTML = convs.map(conv => `
+                <div class="conv-item ${conv.phone === currentPhone ? 'active' : ''}" 
+                     onclick="openConversation('${conv.phone}', '${conv.name}')">
+                    <div class="avatar">${conv.name.charAt(0).toUpperCase()}</div>
+                    <div class="conv-info">
+                        <div class="conv-name">${conv.name}</div>
+                        <div class="conv-last">${conv.lastMessage || ''}</div>
+                    </div>
+                    <div class="conv-time">${formatTime(conv.lastTime)}</div>
+                </div>
+            `).join('');
+        } catch(e) {}
+    }
+
+    async function openConversation(phone, name) {
+        currentPhone = phone;
+        loadConversations();
+
+        const chat = document.getElementById('chat');
+        chat.innerHTML = `
+            <div class="chat-header">
+                <div class="avatar" style="width:40px;height:40px;font-size:16px">${name.charAt(0).toUpperCase()}</div>
+                <div>
+                    <div class="chat-name">${name}</div>
+                    <div class="chat-phone">+${phone}</div>
+                </div>
+            </div>
+            <div class="messages" id="messages">Cargando...</div>
+            <div class="input-area">
+                <input type="text" id="msgInput" placeholder="Escribe un mensaje..." 
+                       onkeypress="if(event.key==='Enter') sendMessage()">
+                <button class="send-btn" onclick="sendMessage()">➤</button>
+            </div>
+        `;
+
+        await loadMessages(phone);
+        
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(() => loadMessages(phone), 3000);
+    }
+
+    async function loadMessages(phone) {
+        try {
+            const res = await fetch(`/api/conversations/${phone}`);
+            const conv = await res.json();
+            const container = document.getElementById('messages');
+            if (!container) return;
+
+            container.innerHTML = conv.messages.map(msg => `
+                <div class="msg ${msg.direction}">
+                    ${msg.text}
+                    <div class="msg-time">${formatTime(msg.time)}</div>
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        } catch(e) {}
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('msgInput');
+        const message = input.value.trim();
+        if (!message || !currentPhone) return;
+        input.value = '';
+
+        try {
+            await fetch('/api/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: currentPhone, message })
+            });
+            await loadMessages(currentPhone);
+        } catch(e) {
+            alert('Error al enviar el mensaje');
+        }
+    }
+
+    function formatTime(isoString) {
+        if (!isoString) return '';
+        const date = new Date(isoString);
+        return date.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Actualizar cada 5 segundos
+    loadStats();
+    loadConversations();
+    setInterval(loadStats, 5000);
+    setInterval(loadConversations, 5000);
+</script>
+</body>
+</html>
