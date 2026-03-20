@@ -600,7 +600,7 @@
     // ── OPEN CHAT ──
     async function openConversation(phone, name) {
         currentPhone = phone;
-        lastMessageCount = 0;
+        resetMessages();
         renderConversations(allConversations);
 
         const isMobile = window.innerWidth <= 700;
@@ -647,7 +647,36 @@
     }
 
     // ── MESSAGES ──
-    let lastMessageCount = 0;
+    let renderedMsgIds = new Set();
+    let lastRenderedDate = null;
+
+    function resetMessages() {
+        renderedMsgIds = new Set();
+        lastRenderedDate = null;
+    }
+
+    function appendMessage(msg, container) {
+        const msgId = String(msg.id);
+        if (renderedMsgIds.has(msgId)) return false;
+        renderedMsgIds.add(msgId);
+
+        const msgDate = new Date(msg.time).toLocaleDateString('es-PE', { day:'numeric', month:'short', year:'numeric' });
+        if (msgDate !== lastRenderedDate) {
+            lastRenderedDate = msgDate;
+            const sep = document.createElement('div');
+            sep.className = 'date-separator';
+            sep.innerHTML = `<span class="date-label">${msgDate}</span>`;
+            container.appendChild(sep);
+        }
+
+        const div = document.createElement('div');
+        div.className = `msg ${msg.direction}`;
+        div.dataset.msgId = msgId;
+        div.innerHTML = `${escapeHtml(msg.text)}<div class="msg-time">${formatTime(msg.time)}</div>`;
+        container.appendChild(div);
+        return true;
+    }
+
     async function loadMessages(phone) {
         try {
             const res = await fetch(`/api/conversations/${phone}`);
@@ -655,28 +684,17 @@
             const container = document.getElementById('messages');
             if (!container) return;
 
-            if (conv.messages.length === lastMessageCount) return;
-            lastMessageCount = conv.messages.length;
+            const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
 
-            const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
+            // Elimina burbuja optimista si el servidor ya tiene el mensaje
+            container.querySelectorAll('.msg-optimistic').forEach(el => el.remove());
 
-            let html = '';
-            let lastDate = null;
+            let addedAny = false;
             conv.messages.forEach(msg => {
-                const msgDate = new Date(msg.time).toLocaleDateString('es-PE', { day:'numeric', month:'short', year:'numeric' });
-                if (msgDate !== lastDate) {
-                    html += `<div class="date-separator"><span class="date-label">${msgDate}</span></div>`;
-                    lastDate = msgDate;
-                }
-                html += `
-                    <div class="msg ${msg.direction}">
-                        ${escapeHtml(msg.text)}
-                        <div class="msg-time">${formatTime(msg.time)}</div>
-                    </div>`;
+                if (appendMessage(msg, container)) addedAny = true;
             });
 
-            container.innerHTML = html || '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px">Sin mensajes aún</div>';
-            if (wasAtBottom) container.scrollTop = container.scrollHeight;
+            if (addedAny && wasAtBottom) container.scrollTop = container.scrollHeight;
         } catch(e) {}
     }
 
@@ -689,11 +707,11 @@
         input.value = '';
         input.focus();
 
-        // Optimistic UI
+        // Burbuja optimista (aparece al instante)
         const container = document.getElementById('messages');
         if (container) {
             const div = document.createElement('div');
-            div.className = 'msg outgoing';
+            div.className = 'msg outgoing msg-optimistic';
             div.innerHTML = `${escapeHtml(message)}<div class="msg-time">${formatTime(new Date())}</div>`;
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
@@ -705,10 +723,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone: currentPhone, message })
             });
-            if (!res.ok) throw new Error('Error al enviar');
-            await loadMessages(currentPhone);
+            if (!res.ok) throw new Error();
+            // El polling reemplazará la burbuja optimista con el mensaje real
         } catch(e) {
-            alert('❌ Error al enviar el mensaje. Verifica la conexión.');
+            container?.querySelectorAll('.msg-optimistic').forEach(el => el.remove());
+            alert('❌ Error al enviar el mensaje.');
         }
     }
 
