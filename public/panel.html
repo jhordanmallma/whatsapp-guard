@@ -539,10 +539,13 @@
     let allConversations = [];
 
     // ── STATS ──
+    let lastStats = {};
     async function loadStats() {
         try {
             const res = await fetch('/stats');
             const data = await res.json();
+            if (data.allowed === lastStats.allowed && data.blocked === lastStats.blocked) return;
+            lastStats = data;
             document.getElementById('headerStats').innerHTML = `
                 <div class="stat-pill green"><span class="dot"></span><span>Activo</span></div>
                 <div class="stat-pill green"><span>✅</span><span>${data.allowed} permitidos</span></div>
@@ -555,7 +558,10 @@
     async function loadConversations() {
         try {
             const res = await fetch('/api/conversations');
-            allConversations = await res.json();
+            const fresh = await res.json();
+            // Solo re-renderiza si hay cambios reales
+            if (JSON.stringify(fresh) === JSON.stringify(allConversations)) return;
+            allConversations = fresh;
             renderConversations(allConversations);
         } catch(e) {}
     }
@@ -594,6 +600,7 @@
     // ── OPEN CHAT ──
     async function openConversation(phone, name) {
         currentPhone = phone;
+        lastMessageCount = 0;
         renderConversations(allConversations);
 
         const isMobile = window.innerWidth <= 700;
@@ -640,12 +647,16 @@
     }
 
     // ── MESSAGES ──
+    let lastMessageCount = 0;
     async function loadMessages(phone) {
         try {
             const res = await fetch(`/api/conversations/${phone}`);
             const conv = await res.json();
             const container = document.getElementById('messages');
             if (!container) return;
+
+            if (conv.messages.length === lastMessageCount) return;
+            lastMessageCount = conv.messages.length;
 
             const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
 
