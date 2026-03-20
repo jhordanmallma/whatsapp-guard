@@ -38,7 +38,19 @@
         /* SIDEBAR */
         .sidebar{width:320px;min-width:320px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:transform 0.3s}
         .sidebar-header{padding:16px 18px 12px;border-bottom:1px solid var(--border)}
-        .sidebar-title{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
+        .sidebar-top-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+        .new-chat-btn{background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-secondary);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+        .new-chat-btn:hover{background:var(--bg-hover);color:var(--accent);border-color:var(--border-accent)}
+        .new-chat-panel{display:none;margin-top:10px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+        .new-chat-panel.open{display:block}
+        .new-chat-label{padding:8px 12px;font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)}
+        .new-chat-list{max-height:200px;overflow-y:auto}
+        .new-chat-item{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;transition:background .15s}
+        .new-chat-item:hover{background:var(--bg-hover)}
+        .new-chat-item .nc-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent-dim),#006655);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+        .new-chat-item .nc-phone{font-size:13px;font-family:var(--font-mono);color:var(--text-primary)}
+        .new-chat-item .nc-label{font-size:11px;color:var(--text-muted)}
+        .new-chat-empty{padding:16px;text-align:center;color:var(--text-muted);font-size:12px;line-height:1.6}
         .search-box{position:relative}
         .search-box input{width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px 8px 34px;color:var(--text-primary);font-family:var(--font-main);font-size:13px;outline:none;transition:border-color .2s}
         .search-box input:focus{border-color:var(--border-accent)}
@@ -243,10 +255,18 @@
 <div class="main">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <div class="sidebar-title">Conversaciones</div>
+            <div class="sidebar-top-row">
+                <div class="sidebar-title">Conversaciones</div>
+                <button class="new-chat-btn" onclick="toggleNewChat()" title="Nueva conversación">✏️</button>
+            </div>
             <div class="search-box">
                 <span class="search-icon">🔍</span>
                 <input type="text" id="searchInput" placeholder="Buscar contacto..." oninput="filterConversations()">
+            </div>
+            <!-- Nueva conversación dropdown -->
+            <div class="new-chat-panel" id="newChatPanel">
+                <div class="new-chat-label">Elige un contacto de tu whitelist</div>
+                <div class="new-chat-list" id="newChatList">Cargando...</div>
             </div>
         </div>
         <div class="conversations" id="conversations">
@@ -601,6 +621,53 @@ function closeLightbox(){document.getElementById('lightbox').classList.remove('o
 const ft=iso=>{if(!iso)return'';return new Date(iso).toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});};
 const h=str=>{if(!str)return'';return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
 const esc=str=>{if(!str)return'';return str.replace(/'/g,"\\'").replace(/"/g,'&quot;');};
+
+// ── NUEVA CONVERSACIÓN ──
+function toggleNewChat(){
+    const panel=document.getElementById('newChatPanel');
+    const isOpen=panel.classList.contains('open');
+    if(isOpen){panel.classList.remove('open');}
+    else{panel.classList.add('open');loadNewChatContacts();}
+}
+
+async function loadNewChatContacts(){
+    const list=document.getElementById('newChatList');
+    list.innerHTML='<div class="new-chat-empty">Cargando...</div>';
+    try{
+        const data=await(await fetch('/contacts')).json();
+        const contacts=data.contactos||[];
+        if(!contacts.length){
+            list.innerHTML=`<div class="new-chat-empty">No tienes contactos en tu whitelist.<br>Agrégalos desde el botón 🛡️ Whitelist.</div>`;
+            return;
+        }
+        list.innerHTML=contacts.map(phone=>`
+            <div class="new-chat-item" onclick="startNewChat('${phone}')">
+                <div class="nc-avatar">${phone.slice(-2)}</div>
+                <div>
+                    <div class="nc-phone">+${phone}</div>
+                    <div class="nc-label">Toca para iniciar conversación</div>
+                </div>
+            </div>`).join('');
+    }catch(e){list.innerHTML='<div class="new-chat-empty">Error al cargar contactos.</div>';}
+}
+
+function startNewChat(phone){
+    // Cerrar el panel
+    document.getElementById('newChatPanel').classList.remove('open');
+
+    // Si ya existe la conversación, solo abrirla
+    const existing=allConversations.find(c=>c.phone===phone);
+    if(existing){
+        openConversation(phone, existing.name);
+        return;
+    }
+
+    // Crear conversación vacía en el sidebar y abrirla
+    const tempConv={phone, name: phone, messages:[], lastMessage:'', lastTime: new Date().toISOString()};
+    allConversations.unshift(tempConv);
+    renderConversations(allConversations);
+    openConversation(phone, phone);
+}
 
 // ── WHITELIST ──
 function toggleWhitelist(){
