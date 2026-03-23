@@ -38,9 +38,12 @@ function saveMessage(phone, name, msgData) {
     if (!db.conversations[phone]) {
         db.conversations[phone] = { name, phone, messages: [] };
     }
+    // Mensajes salientes inician con status "sent"
+    const defaults = msgData.direction === 'outgoing' ? { status: 'sent' } : {};
     db.conversations[phone].messages.push({
-        id:        Date.now(),
-        time:      new Date().toISOString(),
+        id:   Date.now(),
+        time: new Date().toISOString(),
+        ...defaults,
         ...msgData
     });
     db.conversations[phone].lastMessage = msgData.text || `[${msgData.type || 'media'}]`;
