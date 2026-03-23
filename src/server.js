@@ -90,6 +90,25 @@ app.post('/webhook', async (req, res) => {
         const value = body.entry?.[0]?.changes?.[0]?.value;
         if (!value) return;
 
+        // ── Actualizaciones de estado (ticks) ──
+        if (value.statuses && value.statuses.length > 0) {
+            for (const status of value.statuses) {
+                const waId      = status.id;       // ID del mensaje en Meta
+                const newStatus = status.status;   // sent, delivered, read, failed
+                const db = loadDB();
+                // Buscar el mensaje en todas las conversaciones por waMessageId
+                for (const conv of Object.values(db.conversations)) {
+                    const msg = conv.messages.find(m => m.waMessageId === waId);
+                    if (msg) {
+                        msg.status = newStatus;
+                        saveDB(db);
+                        break;
+                    }
+                }
+            }
+            return;
+        }
+
         // ── Mensajes entrantes ──
         if (value.messages && value.messages.length > 0) {
             const message     = value.messages[0];
