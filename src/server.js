@@ -219,6 +219,49 @@ app.get('/api/conversations/:phone', (req, res) => {
 // ─────────────────────────────────────────
 //  API — ENVIAR TEXTO
 // ─────────────────────────────────────────
+
+// ─────────────────────────────────────────
+//  API — INICIAR CONVERSACIÓN (Template)
+// ─────────────────────────────────────────
+app.post('/api/send-template', async (req, res) => {
+    const { phone, templateName = 'hello_world', languageCode = 'en_US' } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Falta el número' });
+
+    try {
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: phone,
+            type: 'template',
+            template: {
+                name: templateName,
+                language: { code: languageCode }
+            }
+        };
+
+        const { data } = await axios.post(
+            `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+            payload,
+            { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+        );
+
+        const waMessageId = data?.messages?.[0]?.id;
+        saveMessage(phone, phone, {
+            direction:   'outgoing',
+            type:        'text',
+            text:        '[Mensaje de bienvenida enviado]',
+            waMessageId: waMessageId || null,
+            status:      'sent'
+        });
+
+        res.json({ ok: true, waMessageId });
+    } catch (error) {
+        console.error('Error enviando template:', error.response?.data || error.message);
+        res.status(500).json({ error: error.response?.data || 'Error al enviar template' });
+    }
+});
+
+
+
 app.post('/api/send', async (req, res) => {
     const { phone, message, replyToId } = req.body;
     if (!phone || !message) return res.status(400).json({ error: 'Faltan datos' });
